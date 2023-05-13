@@ -1,14 +1,13 @@
 use std::collections::HashSet;
-use std::env;
+use std::env::VarError;
+use std::{env, io};
 use std::path::Path;
 use std::fs;
-use std::process::exit;
 
-fn main() {
-    let paths = env::var("PATH").expect("PATH is undefined.");
+fn find_fetches(paths: Vec<String>) -> Result<HashSet<String>, io::Error> {
     let mut found_fetches: HashSet<String> = HashSet::new();
-    for path in paths.split(':') {
-        let dir = Path::new(path);
+    for path in paths {
+        let dir = Path::new(&path);
         let entries_result = fs::read_dir(dir);
         match entries_result {
             Ok(entries) => {
@@ -18,6 +17,7 @@ fn main() {
                     .filter_map(|entry| {
                         let name = entry.file_name();
                         let name_str = name.to_str();
+                        // ignore programs that don't end with "fetch", e.g. fetchyahoo
                         if name_str.is_some() && name_str.unwrap().ends_with("fetch") {
                             Some(String::from(name_str.unwrap()))
                         } else {
@@ -26,11 +26,21 @@ fn main() {
                     }));
             },
             Err(err) => {
-                eprintln!("Failed to read path {} : {}", dir.display(), err);
-                exit(1);
+                return Err(err);
             }
         };
     }
+    Ok(found_fetches)
+}
+
+fn get_paths() -> Result<Vec<String>, VarError> {
+    let paths = env::var("PATH")?;
+    Ok(paths.split(":").map(str::to_owned).collect())
+}
+
+fn main() {
+    let paths = get_paths().expect("Failed to read PATH variable.");
+    let found_fetches = find_fetches(paths).expect("Failed to read path {} : {}");
     for fetch in found_fetches {
         println!("{}", fetch);
     }
